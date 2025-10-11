@@ -1,0 +1,71 @@
+# LoginTester Docker - Git Ignore File
+
+# ========================
+# DOCKER VOLUMES & DATA
+# ========================
+volumes/
+data/
+postgres-data/
+pgdata/
+
+# ========================
+# LOGS
+# ========================
+logs/
+*.log
+
+# ========================
+# ENVIRONMENT VARIABLES
+# ========================
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# ========================
+# IDE & EDITOR
+# ========================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ========================
+# OS SPECIFIC
+# ========================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# ========================
+# TEMPORARY FILES
+# ========================
+*.tmp
+*.temp
+*.pid
+*.seed
+*.pid.lock
+
+# ========================
+# DOCKER SPECIFIC
+# ========================
+docker-compose.override.yml
+.dockerignore
+
+# ========================
+# SSL & CERTIFICATES
+# ========================
+ssl/
+certs/
+*.crt
+*.key
+*.pem
+*.p12
+*.jks
+*.keystore
