@@ -30,6 +30,26 @@ services:
     restart: unless-stopped
 
   # ========================
+  # REDIS (Rate Limiting)
+  # ========================
+  redis:
+    image: redis:7-alpine
+    container_name: logintester_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - logintester_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+
+  # ========================
   # BACKEND (Spring Boot) - HTTP apenas
   # ========================
   backend:
@@ -45,13 +65,25 @@ services:
       
       # JWT Configuration
       JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
-      JWT_EXPIRATION: ${JWT_EXPIRATION:-86400000}
+      JWT_EXPIRATION: ${JWT_EXPIRATION:-900000}
+      JWT_REFRESH_EXPIRATION: ${JWT_REFRESH_EXPIRATION:-604800000}
       
       # Server Configuration
       PORT: 8080
       
       # CORS Configuration - aceita localhost e domínios externos
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost,https://localhost}
+      
+      # Redis Configuration
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ""
+      
+      # Email Configuration (SMTP Google)
+      GMAIL_USERNAME: ${GMAIL_USERNAME:-ktakeapps@gmail.com}
+      GMAIL_APP_PASSWORD: ${GMAIL_APP_PASSWORD:-jalh nhmi vnzk bszz}
+      EMAIL_FROM: ${EMAIL_FROM:-ktakeapps@gmail.com}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
       
       # Java Options
       JAVA_OPTS: "-Xmx512m -Xms256m"
@@ -61,6 +93,8 @@ services:
       - logintester_network
     depends_on:
       database:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     restart: unless-stopped
 
@@ -113,6 +147,9 @@ services:
 volumes:
   postgres_data:
     name: logintester_postgres_data
+    driver: local
+  redis_data:
+    name: logintester_redis_data
     driver: local
 
 # ========================

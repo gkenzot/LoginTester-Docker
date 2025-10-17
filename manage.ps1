@@ -5,7 +5,7 @@
 
 param(
     [Parameter(Position=0)]
-    [ValidateSet("start", "stop", "restart", "logs", "status", "clean", "db", "ngrok", "help")]
+    [ValidateSet("start", "stop", "restart", "logs", "status", "clean", "db", "ngrok", "test", "help")]
     [string]$Action = "start",
     
     [Parameter(Position=1)]
@@ -33,12 +33,13 @@ function Show-Help {
     Write-Host "  status        - Mostra status dos containers" -ForegroundColor $White
     Write-Host "  clean         - Remove containers e volumes (reset completo)" -ForegroundColor $White
     Write-Host "  db            - Acessa o banco de dados" -ForegroundColor $White
-    Write-Host "  ngrok         - Gerencia o ngrok (start/stop/status)" -ForegroundColor $White
+    Write-Host "  test          - Executa todos os testes (backend, frontend, integração)" -ForegroundColor $White
     Write-Host "  help          - Mostra esta ajuda" -ForegroundColor $White
     Write-Host ""
     Write-Host "Exemplos:" -ForegroundColor $Cyan
     Write-Host "  .\manage.ps1 start" -ForegroundColor $White
     Write-Host "  .\manage.ps1 logs backend" -ForegroundColor $White
+    Write-Host "  .\manage.ps1 test" -ForegroundColor $White
     Write-Host "  .\manage.ps1 clean" -ForegroundColor $White
     Write-Host ""
     Write-Host "Acesso:" -ForegroundColor $Cyan
@@ -341,6 +342,267 @@ function Show-NgrokStatus {
     }
 }
 
+# ========================================
+# FUNÇÕES DE TESTE
+# ========================================
+
+function Run-Tests {
+    Write-Host "=== Executando Testes do LoginTester ===" -ForegroundColor $Green
+    Write-Host ""
+    
+    # Verificar se o sistema está rodando
+    Write-Host "Verificando se o sistema esta rodando..." -ForegroundColor $Yellow
+    try {
+        $response = Invoke-WebRequest -Uri "http://localhost:8080/swagger-ui.html" -Method GET -UseBasicParsing -TimeoutSec 5
+        Write-Host "SUCCESS Sistema esta rodando!" -ForegroundColor $Green
+    } catch {
+        Write-Host "ERROR Sistema nao esta rodando!" -ForegroundColor $Red
+        Write-Host "Execute '.\manage.ps1 start' primeiro para iniciar o sistema" -ForegroundColor $Yellow
+        return
+    }
+    
+    Write-Host ""
+    
+    # Contadores de resultados
+    $script:BackendTests = 0
+    $script:BackendPassed = 0
+    $script:FrontendTests = 0
+    $script:FrontendPassed = 0
+    $script:IntegrationTests = 0
+    $script:IntegrationPassed = 0
+    
+    # Executar testes do Backend
+    Test-Backend
+    
+    # Executar testes do Frontend
+    Test-Frontend
+    
+    # Executar testes de Integração
+    Test-Integration
+    
+    # Mostrar resumo final
+    Show-TestSummary
+}
+
+function Test-Backend {
+    Write-Host "=== TESTES DO BACKEND (Spring Boot) ===" -ForegroundColor $Cyan
+    
+    try {
+        Write-Host "Executando testes do backend via Docker..." -ForegroundColor $Yellow
+        $mvnOutput = docker-compose exec -T backend mvn test 2>&1
+        
+        # Parse dos resultados
+        $testResults = $mvnOutput | Select-String "Tests run: (\d+), Failures: (\d+), Errors: (\d+), Skipped: (\d+)"
+        
+        if ($testResults) {
+            $matches = $testResults.Matches[0]
+            $script:BackendTests = [int]$matches.Groups[1].Value
+            $failures = [int]$matches.Groups[2].Value
+            $errors = [int]$matches.Groups[3].Value
+            $skipped = [int]$matches.Groups[4].Value
+            
+            $script:BackendPassed = $script:BackendTests - $failures - $errors
+            
+            if ($failures -eq 0 -and $errors -eq 0) {
+                Write-Host "SUCCESS Backend: $($script:BackendPassed)/$($script:BackendTests) testes passaram" -ForegroundColor $Green
+            } else {
+                Write-Host "ERROR Backend: $($script:BackendPassed)/$($script:BackendTests) testes passaram" -ForegroundColor $Red
+                Write-Host "  Falhas: $failures, Erros: $errors" -ForegroundColor $Yellow
+            }
+        } else {
+            Write-Host "WARNING: Nao foi possivel parsear os resultados dos testes do backend" -ForegroundColor $Yellow
+        }
+    } catch {
+        Write-Host "ERROR: Erro ao executar testes do backend: $($_.Exception.Message)" -ForegroundColor $Red
+    }
+    
+    Write-Host ""
+}
+
+function Test-Frontend {
+    Write-Host "=== TESTES DO FRONTEND (React + Vitest) ===" -ForegroundColor $Cyan
+    
+    try {
+        Write-Host "Executando testes do frontend via Docker..." -ForegroundColor $Yellow
+        $npmOutput = docker-compose exec -T frontend npm test -- --run 2>&1
+        
+        # Parse dos resultados
+        $testResults = $npmOutput | Select-String 'Tests\s+(\d+)\s+passed\s+\((\d+)\)'
+        
+        if ($testResults) {
+            $matches = $testResults.Matches[0]
+            $script:FrontendTests = [int]$matches.Groups[2].Value
+            $script:FrontendPassed = [int]$matches.Groups[1].Value
+            
+            if ($script:FrontendPassed -eq $script:FrontendTests) {
+                Write-Host "SUCCESS Frontend: $($script:FrontendPassed)/$($script:FrontendTests) testes passaram" -ForegroundColor $Green
+            } else {
+                Write-Host "ERROR Frontend: $($script:FrontendPassed)/$($script:FrontendTests) testes passaram" -ForegroundColor $Red
+            }
+        } else {
+            # Fallback para outro formato
+            $testResults = $npmOutput | Select-String 'Test Files\s+(\d+)\s+(failed|passed)\s+\|\s+(\d+)\s+passed\s+\((\d+)\)'
+            if ($testResults) {
+                $matches = $testResults.Matches[0]
+                $script:FrontendTests = [int]$matches.Groups[4].Value
+                $script:FrontendPassed = [int]$matches.Groups[3].Value
+                
+                if ($script:FrontendPassed -eq $script:FrontendTests) {
+                    Write-Host "SUCCESS Frontend: $($script:FrontendPassed)/$($script:FrontendTests) testes passaram" -ForegroundColor $Green
+                } else {
+                    Write-Host "ERROR Frontend: $($script:FrontendPassed)/$($script:FrontendTests) testes passaram" -ForegroundColor $Red
+                }
+            } else {
+                Write-Host "WARNING: Nao foi possivel parsear os resultados dos testes do frontend" -ForegroundColor $Yellow
+            }
+        }
+    } catch {
+        Write-Host "ERROR: Erro ao executar testes do frontend: $($_.Exception.Message)" -ForegroundColor $Red
+    }
+    
+    Write-Host ""
+}
+
+function Test-Integration {
+    Write-Host "=== TESTES DE INTEGRAÇÃO (API + Sistema) ===" -ForegroundColor $Cyan
+    
+    $script:IntegrationTests = 5
+    $script:IntegrationPassed = 0
+    
+    # TESTE 1: Verificar se API está respondendo
+    Write-Host "Testando se API esta respondendo..." -ForegroundColor $Yellow
+    try {
+        $response = Invoke-WebRequest -Uri "http://localhost:8080/swagger-ui.html" -Method GET -UseBasicParsing
+        Write-Host "SUCCESS API esta respondendo" -ForegroundColor $Green
+        $script:IntegrationPassed++
+    } catch {
+        Write-Host "ERROR API nao esta respondendo: $($_.Exception.Message)" -ForegroundColor $Red
+    }
+    
+    # TESTE 2: Registro de usuário
+    Write-Host "Testando registro de usuario..." -ForegroundColor $Yellow
+    try {
+        $timestamp = Get-Date -Format "yyyyMMddHHmmss"
+        $uniqueEmail = "test$timestamp@logintester.com"
+        
+        $registerBody = @{
+            name = "Test User"
+            email = $uniqueEmail
+            password = "Test123!"
+            confirmPassword = "Test123!"
+        } | ConvertTo-Json
+
+        $registerResponse = Invoke-WebRequest -Uri "http://localhost:8080/auth/register" -Method POST -Body $registerBody -ContentType "application/json" -UseBasicParsing
+        Write-Host "SUCCESS Registro de usuario OK" -ForegroundColor $Green
+        $script:IntegrationPassed++
+    } catch {
+        Write-Host "ERROR Registro de usuario falhou: $($_.Exception.Message)" -ForegroundColor $Red
+    }
+    
+    # TESTE 3: Login de usuário
+    Write-Host "Testando login de usuário..." -ForegroundColor $Yellow
+    try {
+        $loginBody = @{
+            email = "user@mail.com"
+            password = "user123"
+        } | ConvertTo-Json
+
+        $loginResponse = Invoke-WebRequest -Uri "http://localhost:8080/auth/login" -Method POST -Body $loginBody -ContentType "application/json" -UseBasicParsing
+        
+        if ($loginResponse.Content -like "*Login realizado com sucesso*") {
+            Write-Host "SUCCESS Login de usuario OK" -ForegroundColor $Green
+            $script:IntegrationPassed++
+        } else {
+            Write-Host "ERROR Login de usuario falhou" -ForegroundColor $Red
+        }
+    } catch {
+        Write-Host "ERROR Login de usuario falhou: $($_.Exception.Message)" -ForegroundColor $Red
+    }
+    
+    # TESTE 4: Login como admin
+    Write-Host "Testando login de admin..." -ForegroundColor $Yellow
+    try {
+        $adminLoginBody = @{
+            email = "admin@mail.com"
+            password = "admin123"
+        } | ConvertTo-Json
+
+        $adminLoginResponse = Invoke-WebRequest -Uri "http://localhost:8080/auth/login" -Method POST -Body $adminLoginBody -ContentType "application/json" -UseBasicParsing -SessionVariable "adminSession"
+        
+        if ($adminLoginResponse.Content -like "*Login realizado com sucesso*") {
+            Write-Host "SUCCESS Login de admin OK" -ForegroundColor $Green
+            $script:IntegrationPassed++
+        } else {
+            Write-Host "ERROR Login de admin falhou" -ForegroundColor $Red
+        }
+    } catch {
+        Write-Host "ERROR Login de admin falhou: $($_.Exception.Message)" -ForegroundColor $Red
+    }
+    
+    # TESTE 5: API de segurança
+    Write-Host "Testando API de seguranca..." -ForegroundColor $Yellow
+    try {
+        $securityResponse = Invoke-WebRequest -Uri "http://localhost:8080/api/security/dashboard" -Method GET -WebSession $adminSession -UseBasicParsing
+        
+        if ($securityResponse.Content -like "*totalLoginsToday*") {
+            Write-Host "SUCCESS API de seguranca OK" -ForegroundColor $Green
+            $script:IntegrationPassed++
+        } else {
+            Write-Host "ERROR API de seguranca falhou" -ForegroundColor $Red
+        }
+    } catch {
+        Write-Host "ERROR API de seguranca falhou: $($_.Exception.Message)" -ForegroundColor $Red
+    }
+    
+    Write-Host ""
+}
+
+function Show-TestSummary {
+    Write-Host "=== RESUMO FINAL DOS TESTES ===" -ForegroundColor $Cyan
+    Write-Host "===============================" -ForegroundColor $Cyan
+    Write-Host ""
+    
+    $totalTests = $script:BackendTests + $script:FrontendTests + $script:IntegrationTests
+    $totalPassed = $script:BackendPassed + $script:FrontendPassed + $script:IntegrationPassed
+    
+    Write-Host "Backend (Spring Boot):" -ForegroundColor $Yellow
+    Write-Host "   Testes: $($script:BackendPassed)/$($script:BackendTests)" -ForegroundColor $White
+    
+    Write-Host "Frontend (React + Vitest):" -ForegroundColor $Yellow
+    Write-Host "   Testes: $($script:FrontendPassed)/$($script:FrontendTests)" -ForegroundColor $White
+    
+    Write-Host "Integração (API + Sistema):" -ForegroundColor $Yellow
+    Write-Host "   Testes: $($script:IntegrationPassed)/$($script:IntegrationTests)" -ForegroundColor $White
+    
+    Write-Host ""
+    Write-Host "TOTAL GERAL:" -ForegroundColor $Cyan
+    Write-Host "   Testes: $totalPassed/$totalTests" -ForegroundColor $White
+    
+    $successRate = if ($totalTests -gt 0) { [math]::Round(($totalPassed / $totalTests) * 100, 2) } else { 0 }
+    Write-Host "   Taxa de Sucesso: $successRate%" -ForegroundColor $(if ($successRate -ge 90) { $Green } elseif ($successRate -ge 70) { $Yellow } else { $Red })
+    
+    Write-Host ""
+    if ($totalPassed -eq $totalTests) {
+        Write-Host "TODOS OS TESTES PASSARAM!" -ForegroundColor $Green
+        Write-Host "   Sistema esta funcionando perfeitamente!" -ForegroundColor $Green
+    } elseif ($successRate -ge 90) {
+        Write-Host "EXCELENTE! Quase todos os testes passaram!" -ForegroundColor $Green
+        Write-Host "   Sistema esta funcionando muito bem!" -ForegroundColor $Green
+    } elseif ($successRate -ge 70) {
+        Write-Host "BOM! Maioria dos testes passou!" -ForegroundColor $Yellow
+        Write-Host "   Sistema esta funcionando, mas ha melhorias a fazer!" -ForegroundColor $Yellow
+    } else {
+        Write-Host "ATENCAO! Muitos testes falharam!" -ForegroundColor $Red
+        Write-Host "   Sistema precisa de correcoes!" -ForegroundColor $Red
+    }
+    
+    Write-Host ""
+    Write-Host "Para mais detalhes:" -ForegroundColor $Blue
+    Write-Host "  - Execute '.\manage.ps1 logs backend' para logs do backend" -ForegroundColor $White
+    Write-Host "  - Execute '.\manage.ps1 logs frontend' para logs do frontend" -ForegroundColor $White
+    Write-Host "  - Acesse http://localhost:8080/swagger-ui.html para testar APIs" -ForegroundColor $White
+}
+
 # Executar ação solicitada
 switch ($Action) {
     "start" { Start-Services }
@@ -351,6 +613,7 @@ switch ($Action) {
     "clean" { Clean-System }
     "db" { Access-Database }
     "ngrok" { Manage-Ngrok }
+    "test" { Run-Tests }
     "help" { Show-Help }
     default { Show-Help }
 }
