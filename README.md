@@ -118,7 +118,21 @@ docker-compose up --build -d
 docker-compose logs -f
 ```
 
-### 3. Comandos Úteis
+### 3. Configuração do email (recuperação de senha e verificação)
+
+Para que os emails de **recuperação de senha** e **verificação de email** sejam enviados, configure uma conta Gmail (ex.: `ktakeapps@gmail.com`):
+
+1. **Arquivo `.env`:** use `env.example` como base (`cp env.example .env`).
+2. **Variáveis obrigatórias:**
+   - `GMAIL_USERNAME` – email completo (ex.: `ktakeapps@gmail.com`).
+   - `GMAIL_APP_PASSWORD` – [senha de app do Gmail](https://support.google.com/accounts/answer/185833) (Conta Google → Segurança → Verificação em 2 etapas → Senhas de app). Não use a senha normal da conta.
+   - `EMAIL_FROM` – remetente exibido nos emails (geralmente o mesmo que `GMAIL_USERNAME`).
+   - `FRONTEND_URL` – URL do frontend (para links nos emails; em local: `http://localhost:3000`).
+3. Reinicie os containers após alterar o `.env` (ex.: `.\manage.ps1 restart`).
+
+Sem essas variáveis, o backend sobe normalmente, mas o envio de email (esqueci senha, códigos de verificação) falhará.
+
+### 4. Comandos Úteis
 
 ```bash
 # Ver status dos serviços
@@ -284,6 +298,21 @@ NGINX_PORT=80
 FRONTEND_PORT=3000
 BACKEND_PORT=8080
 ```
+
+### Variáveis de ambiente para produção (Backend)
+
+Para deploy em **produção com HTTPS**, configure no `.env`:
+
+| Variável | Descrição | Exemplo (produção) |
+|----------|-----------|---------------------|
+| `APP_COOKIE_SECURE` | Cookie de logout enviado apenas em HTTPS | `true` |
+| `APP_SECURITY_HSTS_ENABLED` | HSTS (Strict-Transport-Security) | `true` |
+| `SPRING_PROFILES_ACTIVE` | Perfil Spring: `dev` (show-sql no log) ou `prod` | `prod` |
+| `app.password.common-passwords` | Lista de senhas fracas (vírgula); opcional | (já em application.properties) |
+
+O backend lê essas variáveis via `docker-compose.yml` (serviço `backend`). Em desenvolvimento use `APP_COOKIE_SECURE=false`, `APP_SECURITY_HSTS_ENABLED=false` e `SPRING_PROFILES_ACTIVE=dev`.
+
+Opcional: para carregar a lista de senhas fracas de um arquivo (um por linha), defina no `.env` do backend ou em `application.properties` a propriedade `app.password.common-passwords-file` com o caminho do arquivo. Se estiver definida, ela tem prioridade sobre `app.password.common-passwords`.
 
 ### Detecção Automática de Links Externos
 

@@ -57,6 +57,8 @@ services:
       context: ../LoginTester-BackEnd
       dockerfile: Dockerfile
     container_name: logintester_backend
+    volumes:
+      - profile_photos_data:/app/uploads/profile-photos
     environment:
       # Database connection
       DB_URL: jdbc:postgresql://database:5432/${POSTGRES_DB:-logintester_db}
@@ -80,10 +82,17 @@ services:
       REDIS_PASSWORD: ""
       
       # Email Configuration (SMTP Google)
-      GMAIL_USERNAME: ${GMAIL_USERNAME:-ktakeapps@gmail.com}
-      GMAIL_APP_PASSWORD: ${GMAIL_APP_PASSWORD:-jalh nhmi vnzk bszz}
-      EMAIL_FROM: ${EMAIL_FROM:-ktakeapps@gmail.com}
+      GMAIL_USERNAME: ${GMAIL_USERNAME}
+      GMAIL_APP_PASSWORD: ${GMAIL_APP_PASSWORD}
+      EMAIL_FROM: ${EMAIL_FROM}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      PROFILE_PHOTO_DIR: ${PROFILE_PHOTO_DIR:-/app/uploads/profile-photos}
+      
+      # Segurança (produção HTTPS: use APP_COOKIE_SECURE=true e APP_SECURITY_HSTS_ENABLED=true)
+      APP_COOKIE_SECURE: ${APP_COOKIE_SECURE:-false}
+      APP_SECURITY_HSTS_ENABLED: ${APP_SECURITY_HSTS_ENABLED:-false}
+      # Perfil Spring (dev = show-sql no log; prod = desativado)
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
       
       # Java Options
       JAVA_OPTS: "-Xmx512m -Xms256m"
@@ -150,6 +159,9 @@ volumes:
     driver: local
   redis_data:
     name: logintester_redis_data
+    driver: local
+  profile_photos_data:
+    name: logintester_profile_photos_data
     driver: local
 
 # ========================

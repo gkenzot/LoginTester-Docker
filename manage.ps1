@@ -12,6 +12,11 @@ param(
     [string]$Service = ""
 )
 
+# Sempre executar a partir do diretório do script (onde está o docker-compose.yml).
+# Assim ".\manage.ps1 restart" funciona mesmo quando chamado de outra pasta (ex: raiz do repo).
+$ScriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
+Set-Location -LiteralPath $ScriptDir
+
 # Cores para output
 $Red = "Red"
 $Green = "Green"
@@ -59,8 +64,15 @@ function Start-Services {
     Write-Host "=== Iniciando LoginTester ===" -ForegroundColor $Green
     Create-EnvIfNeeded
     
+    Write-Host "Diretório do projeto: $ScriptDir" -ForegroundColor $Cyan
     Write-Host "Iniciando todos os serviços..." -ForegroundColor $Yellow
-    docker-compose up --build -d
+    $upResult = docker-compose up --build -d 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "ERRO ao subir os containers. Saída:" -ForegroundColor $Red
+        Write-Host $upResult -ForegroundColor $Red
+        Write-Host "Verifique: Docker Desktop está rodando? Execute 'docker-compose up --build -d' manualmente neste diretório para mais detalhes." -ForegroundColor $Yellow
+        return
+    }
     
     Write-Host "Aguardando serviços ficarem prontos..." -ForegroundColor $Yellow
     Start-Sleep -Seconds 10
@@ -81,7 +93,8 @@ function Start-Services {
     }
     
     Write-Host "=== Sistema iniciado com sucesso! ===" -ForegroundColor $Green
-    
+    docker-compose ps
+
     # Mostrar links disponíveis
     Write-Host ""
     Write-Host "=== URLs disponíveis ===" -ForegroundColor $Cyan
